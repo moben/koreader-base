@@ -30,6 +30,74 @@ extern "C" {
 #include "crengine.h"
 #include "lvdocview.h"
 #include "lvimg.h"
+#include "fb2def.h"
+
+static bool _isLinkToFootnote(ldomDocument *doc, const ldomXPointerEx sourceXP, const lString32 target_xpointer,
+            const int flags, const int maxTextSize, lString32 &reason,
+            lString32 &extendedStopReason, ldomXRange &extendedRange);
+
+class koreaderFootnoteCallback : public ldomNodeCallback {
+public:
+    int flags = 0x0002 + 0x0004 + 0x0008 + 0x0010 + 0x0020 + 0x0040 + 0x0100 + 0x0200 + 0x0400 + 0x0800 + 0x1000 + 0x4000 + 0x8000;
+
+    koreaderFootnoteCallback() { }
+    koreaderFootnoteCallback(const koreaderFootnoteCallback&) = default;
+    koreaderFootnoteCallback& operator=(const koreaderFootnoteCallback&) = default;
+    /// called for each found text fragment in range
+    virtual void onText(ldomXRange *) { }
+    /// called for each found node in range
+    virtual bool onElement(ldomXPointerEx * ptr) {
+        if (ptr == NULL || ptr->isNull())
+            return true;
+
+        ldomNode * node = ptr->getNode();
+        if ( !node ||  node->getNodeId()!=el_a )
+            return true;
+        ldomDocument * doc = node->getDocument();
+
+        lString32 link = ptr->getHRef();
+        if (link[0] != '#' || link.length() <= 1)
+            return true;
+
+        const ldomXPointerEx targetXP = ldomXPointerEx(ptr->getDocument()->createXPointer(link));
+        ldomNode *targetNode = targetXP.getNode();
+
+        lString32 reason;
+        lString32 extendedStopReason;
+        ldomXRange extendedRange;
+        if (_isLinkToFootnote(
+            doc,
+            *ptr,
+            link,
+            flags,
+            40000,
+            reason,
+            extendedStopReason,
+            extendedRange)) {
+            ldomXRange blockrange = ldomXRange(ldomXPointerEx(targetNode, 0).getThisBlockNode(), true);
+
+            // FIXME
+            // It seems lik when the extension is on a different page than the original block, we miss it here for some reason?
+            // Or maybe this was just because style is still buggy on re-load
+            if (! extendedRange.isNull()) {
+                blockrange.setEnd(extendedRange.getEnd());
+            }
+
+            link.erase(0,1);
+            doc->addFootnoteSource(node, link);
+            doc->addFootnoteTarget(link, ldomXPointerEx(targetNode, 0).getThisBlockNode(), extendedRange);
+
+            // FIXME I think this works now?
+            // need to invalidate cache / doc serialization somehow after this
+            // Otherwise, they aren't marked on load...
+            // Or make footnotes serialized
+        }
+        return true;
+    }
+};
+
+
+static koreaderFootnoteCallback footNoteCallback;
 
 static void replaceColor( char * str, lUInt32 color ) {
 	// in line like "0 c #80000000",
@@ -692,6 +760,7 @@ static int loadDocument(lua_State *L) {
 
 	doc->text_view->LoadDocument(file_name, only_metadata);
 	doc->dom_doc = doc->text_view->getDocument();
+	doc->dom_doc->setFootnoteFinder(&footNoteCallback);
 
 	bool loaded = false;
 	if (doc->dom_doc) { loaded = true ;}
