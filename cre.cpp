@@ -2807,12 +2807,11 @@ static int getPageLinks(lua_State *L) {
 
 // Internal function that just returns true or false as soon as detection is decided.
 // Used by the real isLinkToFootnote(lua_State *L) that will push that bool to the Lua stack
-static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer, const lString32 target_xpointer,
+static bool _isLinkToFootnote(ldomDocument *doc, const ldomXPointerEx sourceXP, const lString32 target_xpointer,
             const int flags, const int maxTextSize, lString32 &reason,
             lString32 &extendedStopReason, ldomXRange &extendedRange)
 {
-    const ldomXPointerEx sourceXP = ldomXPointerEx(doc->dom_doc->createXPointer(source_xpointer));
-    const ldomXPointerEx targetXP = ldomXPointerEx(doc->dom_doc->createXPointer(target_xpointer));
+    const ldomXPointerEx targetXP = ldomXPointerEx(doc->createXPointer(target_xpointer));
     ldomNode *sourceNode = sourceXP.getNode();
     ldomNode *targetNode = targetXP.getNode();
     // target_xpointer might be "#_doc_fragment_0_ References", but we may also need
@@ -2960,8 +2959,8 @@ static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer,
         //    body[name="comments"] section {
         //        -cr-hint: footnote;
         //    }
-        if ( targetNode->getNodeId() == doc->dom_doc->getElementNameIndex("section") ) {
-            lUInt16 el_body = doc->dom_doc->getElementNameIndex("body");
+        if ( targetNode->getNodeId() == doc->getElementNameIndex("section") ) {
+            lUInt16 el_body = doc->getElementNameIndex("body");
             ldomNode * n = targetNode->getParentNode();
             while ( n && !n->isNull() ) {
                 if ( n->getNodeId() == el_body ) {
@@ -3014,7 +3013,7 @@ static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer,
 
     if (flags & 0x0040) { // Target must not be in the TOC
         // Walk the tree up and down, avoid the need for recursion.
-        LVTocItem * item = doc->text_view->getToc();
+        LVTocItem * item = doc->getToc();
         if (item->getChildCount() > 0) {
             int nextChildIndex = 0;
             item = item->getChild(nextChildIndex);
@@ -3150,8 +3149,8 @@ static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer,
             // Also check if any of the 2 first parents are <sup> or <sub>
             // (which may have been tweaked with CSS and not have the expected
             // vertical-align:)
-            lUInt16 el_sup = doc->dom_doc->getElementNameIndex("sup");
-            lUInt16 el_sub = doc->dom_doc->getElementNameIndex("sub");
+            lUInt16 el_sup = doc->getElementNameIndex("sup");
+            lUInt16 el_sub = doc->getElementNameIndex("sub");
             ldomNode * n = sourceNode->getParentNode();
             for ( int i=0; i<2; i++ ) {
                 if ( !n || n->isNull() )
@@ -3250,8 +3249,8 @@ static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer,
     // Target must not contain, or be contained in, H1..H6
     if (flags & 0x1000) {
         // We expect h1..h6 to stay consecutive and ascending in crengine/include/fb2def.h
-        lUInt16 el_h1 = doc->dom_doc->getElementNameIndex("h1");
-        lUInt16 el_h6 = doc->dom_doc->getElementNameIndex("h6");
+        lUInt16 el_h1 = doc->getElementNameIndex("h1");
+        lUInt16 el_h6 = doc->getElementNameIndex("h6");
         // Check parents
         ldomNode * n = targetNode;
         while ( n && !n->isNull() ) {
@@ -3362,11 +3361,11 @@ static bool _isLinkToFootnote(CreDocument *doc, const lString32 source_xpointer,
             // Check all coming elements until we meet one that can't
             // be part of current footnote: its final container too
             // can't be part of current footnote
-            lUInt16 el_DocFragment = doc->dom_doc->getElementNameIndex("DocFragment");
-            lUInt16 el_body = doc->dom_doc->getElementNameIndex("body");
-            lUInt16 el_h1 = doc->dom_doc->getElementNameIndex("h1");
-            lUInt16 el_h6 = doc->dom_doc->getElementNameIndex("h6");
-            lUInt16 el_a = doc->dom_doc->getElementNameIndex("a");
+            lUInt16 el_DocFragment = doc->getElementNameIndex("DocFragment");
+            lUInt16 el_body = doc->getElementNameIndex("body");
+            lUInt16 el_h1 = doc->getElementNameIndex("h1");
+            lUInt16 el_h6 = doc->getElementNameIndex("h6");
+            lUInt16 el_a = doc->getElementNameIndex("a");
             ldomNode * goodFinalNode = NULL;
             ldomNode * curFinalNode = NULL;
             ldomXPointerEx notAfter;
@@ -3525,10 +3524,11 @@ static int isLinkToFootnote(lua_State *L) {
     const int flags = (int)luaL_checkint(L, 4);
     const int max_text_size = (int)luaL_optint(L, 5, 10000); // default: 10 000 chars
 
+    const ldomXPointerEx sourceXP = ldomXPointerEx(doc->dom_doc->createXPointer(lString32(source_xpointer)));
     lString32 reason;
     lString32 extendedStopReason;
     ldomXRange extendedRange;
-    bool isFootnote = _isLinkToFootnote(doc, lString32(source_xpointer), lString32(target_xpointer),
+    bool isFootnote = _isLinkToFootnote(doc->dom_doc, sourceXP, lString32(target_xpointer),
             flags, max_text_size, reason, extendedStopReason, extendedRange);
     int stackLength = 2;
     lua_pushboolean(L, isFootnote);
